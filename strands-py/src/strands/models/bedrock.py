@@ -598,6 +598,9 @@ class BedrockModel(Model):
         if not cache_tools:
             return []
 
+        if cache_config is not None and self._cache_strategy != "anthropic":
+            return []
+
         if isinstance(cache_tools, CacheToolsConfig):
             cache_type, ttl = cache_tools.type, cache_tools.ttl
         else:
@@ -1605,19 +1608,11 @@ class BedrockModel(Model):
                 if "reasoningText" in reasoning:
                     reasoning_text = reasoning["reasoningText"]
                     if "text" in reasoning_text:
-                        yield {
-                            "contentBlockDelta": {
-                                "delta": {"reasoningContent": {"text": reasoning_text["text"]}}
-                            }
-                        }
+                        yield {"contentBlockDelta": {"delta": {"reasoningContent": {"text": reasoning_text["text"]}}}}
                     if reasoning_text.get("signature"):
                         yield {
                             "contentBlockDelta": {
-                                "delta": {
-                                    "reasoningContent": {
-                                        "signature": reasoning_text["signature"]
-                                    }
-                                }
+                                "delta": {"reasoningContent": {"signature": reasoning_text["signature"]}}
                             }
                         }
                 if "redactedContent" in reasoning:
