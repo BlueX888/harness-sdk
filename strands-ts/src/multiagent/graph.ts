@@ -399,9 +399,11 @@ export class Graph implements MultiAgent {
           if (interrupted) continue
 
           // Stop scheduling new nodes once any node has interrupted; in-flight siblings
-          // run to completion on their own.
+          // run to completion on their own. Drop queued-but-unscheduled targets so the
+          // loop terminates once in-flight siblings drain; resume re-discovers them.
           if (nodeResult.status === Status.INTERRUPTED) {
             interrupted = true
+            targets.length = 0
             continue
           }
 

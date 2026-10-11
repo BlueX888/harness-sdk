@@ -59,6 +59,18 @@ function createStructuredOutputAgent(
   return new Agent({ model, tools, printer: false, id: agentId })
 }
 
+/**
+ * Rejects if `promise` hasn't settled within `ms`. Guards against regressions where
+ * the promise never settles at all — a plain await would hang the test until the
+ * runner's own limit instead of failing with a clear message.
+ */
+function withDeadline<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`TIMEOUT after ${ms}ms: ${label}`)), ms)),
+  ])
+}
+
 describe('Multi-agent interrupts: round-trip', () => {
   it('Graph: agent interrupts, resumes via top-level SessionManager', async () => {
     const storage = new MockSnapshotStorage()
@@ -260,6 +272,51 @@ describe('Multi-agent interrupts: round-trip', () => {
     expect(interrupterResult?.status).toBe(Status.INTERRUPTED)
     expect(interrupterResult?.interrupts).toHaveLength(1)
   })
+
+  it('Graph: interrupt while other targets are queued still terminates the run', async () => {
+    const tool = interruptingTool('confirmTool', 'confirm', 'approved')
+
+    // maxConcurrency=1 serializes scheduling. 'start' completes and 'downstream' is
+    // discovered, but when 'interrupter' runs and interrupts, 'downstream' is still
+    // sitting in the scheduling queue alongside no in-flight streams. The run must
+    // still end INTERRUPTED instead of waiting forever on an empty queue.
+    const startModel = new MockMessageModel().addTurn({ type: 'textBlock', text: 'go' })
+    const start = new Agent({ model: startModel, printer: false, id: 'start' })
+
+    const interrupterModel = new MockMessageModel().addTurn({
+      type: 'toolUseBlock',
+      name: 'confirmTool',
+      toolUseId: 'tool-i',
+      input: {},
+    })
+    const interrupter = new Agent({ model: interrupterModel, tools: [tool], printer: false, id: 'interrupter' })
+
+    const downstream = new Agent({
+      model: new MockMessageModel().addTurn({ type: 'textBlock', text: 'downstream-reply' }),
+      printer: false,
+      id: 'downstream',
+    })
+
+    const graph = new Graph({
+      nodes: [start, interrupter, downstream],
+      edges: [['start', 'downstream']],
+      maxConcurrency: 1,
+    })
+
+    // No graph timeout on purpose: termination must not rely on the wall-clock
+    // budget, whose abort check never re-runs once the loop parks on the queue.
+    const result = await withDeadline(graph.invoke('begin'), 5_000, 'graph.invoke never settled')
+
+    expect(result.status).toBe(Status.INTERRUPTED)
+    expect(result.interrupts).toHaveLength(1)
+
+    const interrupterResult = result.results.find((r) => r.nodeId === 'interrupter')
+    expect(interrupterResult?.status).toBe(Status.INTERRUPTED)
+    expect(interrupterResult?.interrupts).toHaveLength(1)
+
+    // The queued-but-unscheduled node is dropped, not executed after the interrupt.
+    expect(result.results.map((r) => r.nodeId)).not.toContain('downstream')
+  }, 20_000)
 
   it('Nested orchestrator: interrupts bubble up on first run but do not round-trip without a nested SessionManager', async () => {
     // Nested orchestrator has no SessionManager of its own, only the outer one does.
