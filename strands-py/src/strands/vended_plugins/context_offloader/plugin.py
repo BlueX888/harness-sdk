@@ -552,6 +552,9 @@ class ContextOffloader(Plugin):
                         self._track_stored_cycle(event.agent, ref, cycle)
                     else:
                         references.append(None)
+                else:
+                    # Not stored, but the rebuild loop indexes references by content position.
+                    references.append(None)
         except Exception:
             logger.warning(
                 "tool_use_id=<%s> | failed to offload tool result, keeping original",

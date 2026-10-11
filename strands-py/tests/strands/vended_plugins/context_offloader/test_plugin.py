@@ -389,6 +389,38 @@ class TestContextOffloader:
         assert "[Offloaded:" in event.result["content"][0]["text"]
 
     @pytest.mark.asyncio
+    async def test_empty_text_block_does_not_shift_media_references(self, plugin, storage, mock_agent):
+        img_a = b"A" * 32
+        img_b = b"B" * 32
+        content = [
+            {"text": "x" * 200},
+            {"text": ""},
+            {"image": {"format": "png", "source": {"bytes": img_a}}},
+            {"image": {"format": "png", "source": {"bytes": img_b}}},
+        ]
+        event = _make_event(mock_agent, content)
+
+        await plugin._handle_tool_result(event)
+
+        # Text + both images stored
+        assert len(storage._store) == 3
+
+        result_content = event.result["content"]
+        # Each image placeholder must cite the reference that retrieves that
+        # image's own bytes — an unrecorded empty text block would shift every
+        # later entry by one.
+        placeholder_refs = [
+            block["text"].split("ref: ")[1].removesuffix("]")
+            for block in result_content
+            if "ref: " in block.get("text", "")
+        ]
+        retrieved = [await storage.retrieve(ref) for ref in placeholder_refs]
+        assert retrieved == [(img_a, "image/png"), (img_b, "image/png")]
+
+        # No original media block survives offloading
+        assert not any("image" in block for block in result_content)
+
+    @pytest.mark.asyncio
     async def test_document_only_content_passes_through(self, plugin, mock_agent):
         content = [{"document": {"format": "pdf", "name": "report.pdf", "source": {"bytes": b"pdf"}}}]
         event = _make_event(mock_agent, content)
