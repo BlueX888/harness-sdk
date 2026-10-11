@@ -638,8 +638,23 @@ class DecoratedFunctionTool(AgentTool, Generic[P, R]):
             # Async-generators, yield streaming events and final tool result
             if inspect.isasyncgenfunction(self._tool_func):
                 sub_events = self._tool_func(**validated_input)  # type: ignore
+                yielded_any = False
                 async for sub_event in sub_events:
+                    yielded_any = True
                     yield ToolStreamEvent(tool_use, sub_event)
+
+                if not yielded_any:
+                    # A generator that streamed nothing has no result — surface an error result
+                    # rather than a null one
+                    yield self._wrap_tool_result(
+                        tool_use_id,
+                        {
+                            "toolUseId": tool_use_id,
+                            "status": "error",
+                            "content": [{"text": f"Tool '{self._tool_name}' did not return a result"}],
+                        },
+                    )
+                    return
 
                 # The last event is the result
                 yield self._wrap_tool_result(tool_use_id, sub_event)

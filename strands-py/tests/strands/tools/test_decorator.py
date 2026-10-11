@@ -1819,6 +1819,46 @@ async def test_tool_async_generator_yield_object_result():
     assert act_results == exp_results
 
 
+@pytest.mark.asyncio
+async def test_tool_async_generator_empty_stream_results_in_error():
+    """Test that an async generator that yields nothing produces an error result."""
+
+    @strands.tool(context=False)
+    async def quiet_generator(flag: bool) -> AsyncGenerator:
+        """Tool that yields a result only when flag is true.
+
+        Args:
+            flag: whether to yield a result.
+        """
+        if flag:
+            yield "did the work"
+
+    tool: AgentTool = quiet_generator
+    tool_use: ToolUse = {
+        "toolUseId": "test-id-2",
+        "name": "quiet_generator",
+        "input": {"flag": False},
+    }
+    generator = tool.stream(
+        tool_use=tool_use,
+        invocation_state={
+            "agent": Agent(name="test_agent"),
+        },
+    )
+    act_results = [value async for value in generator]
+    exp_results = [
+        ToolResultEvent(
+            {
+                "status": "error",
+                "content": [{"text": "Tool 'quiet_generator' did not return a result"}],
+                "toolUseId": "test-id-2",
+            }
+        ),
+    ]
+
+    assert act_results == exp_results
+
+
 def test_function_tool_metadata_validate_signature_default_context_name_mismatch():
     with pytest.raises(ValueError, match=r"param_name=<context> | ToolContext param must be named 'tool_context'"):
 
