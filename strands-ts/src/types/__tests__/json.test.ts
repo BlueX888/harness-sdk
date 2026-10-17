@@ -311,6 +311,28 @@ describe('deepCopyWithValidation', () => {
       )
     })
 
+    it('throws JsonValidationError with dot notation for numeric keys on plain objects', () => {
+      const withFunction = {
+        '0': (): string => 'test',
+      }
+
+      expect(() => deepCopyWithValidation(withFunction, 'value')).toThrow(JsonValidationError)
+      expect(() => deepCopyWithValidation(withFunction, 'value')).toThrow(
+        'value.0 contains a function which cannot be serialized'
+      )
+    })
+
+    it('throws JsonValidationError with the correct path for empty-string keys', () => {
+      const withFunction = {
+        '': { bad: (): string => 'test' },
+      }
+
+      expect(() => deepCopyWithValidation(withFunction, 'value')).toThrow(JsonValidationError)
+      expect(() => deepCopyWithValidation(withFunction, 'value')).toThrow(
+        "value[''].bad contains a function which cannot be serialized"
+      )
+    })
+
     it('throws JsonValidationError for symbols in objects', () => {
       const sym = Symbol('test')
       const withSymbol = {

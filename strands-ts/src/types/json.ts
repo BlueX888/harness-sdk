@@ -81,14 +81,20 @@ export function deepCopyWithValidation(value: unknown, contextPath: string = 'va
     const parentFrame = pathStack[pathStack.length - 1]
 
     // Build current path
+    // The initial call carries an empty key with no frames on the stack; a real '' property
+    // key is visited while its parent object is on the stack and must stay part of the path.
+    const isRoot = key === '' && parentFrame === undefined
     let currentPath = contextPath
-    if (key !== '') {
-      // Check if parent is array (numeric key pattern)
-      const isArrayIndex = /^\d+$/.test(key)
-      if (isArrayIndex) {
-        currentPath = parentFrame ? `${parentFrame.path}[${key}]` : `${contextPath}[${key}]`
+    if (!isRoot) {
+      const parentPath = parentFrame ? parentFrame.path : contextPath
+      if (key === '') {
+        // Dot notation would drop a real empty-string key, so keep it in brackets
+        currentPath = `${parentPath}['']`
+      } else if (Array.isArray(this) && /^\d+$/.test(key)) {
+        // Bracket notation only for real arrays, not for numeric-looking object keys
+        currentPath = `${parentPath}[${key}]`
       } else {
-        currentPath = parentFrame ? `${parentFrame.path}.${key}` : `${contextPath}.${key}`
+        currentPath = `${parentPath}.${key}`
       }
     }
 
