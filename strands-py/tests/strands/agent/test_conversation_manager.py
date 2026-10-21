@@ -233,7 +233,7 @@ def test_sliding_window_no_valid_trim_point_without_error_does_not_raise():
 
 
 def test_sliding_window_tool_heavy_conversation_falls_back_to_tool_pair_boundary():
-    """Tool-heavy conversations trim to assistant(toolUse) + user(toolResult) boundary."""
+    """Tool-heavy conversations trim to a tool pair while retaining the user message that anchors it."""
     manager = SlidingWindowConversationManager(window_size=4, should_truncate_results=False)
     messages = [
         {"role": "user", "content": [{"text": "Review this PR"}]},
@@ -258,13 +258,15 @@ def test_sliding_window_tool_heavy_conversation_falls_back_to_tool_pair_boundary
 
     manager.reduce_context(test_agent, e=Exception("context window overflow"))
 
-    # Should trim to first assistant(toolUse) + user(toolResult) pair after trim_index
-    # With 8 messages and window_size=4, trim_index starts at 4. First fallback at index 5 (toolUseId "3").
-    assert len(messages) == 3
-    assert messages[0]["role"] == "assistant"
-    assert messages[0]["content"][0]["toolUse"]["toolUseId"] == "3"
-    assert messages[1]["role"] == "user"
-    assert any("toolResult" in content for content in messages[1]["content"])
+    # With 8 messages and window_size=4, trim_index starts at 4. The first fallback pair is at
+    # index 5 (toolUseId "3"); the plain user message at index 0 anchors it and must be kept.
+    assert len(messages) == 4
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == [{"text": "Review this PR"}]
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"][0]["toolUse"]["toolUseId"] == "3"
+    assert messages[2]["role"] == "user"
+    assert any("toolResult" in content for content in messages[2]["content"])
 
 
 def test_sliding_window_prefers_plain_user_message_over_tool_pair_fallback():
